@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-from passlib.hash import bcrypt
+from passlib.hash import pbkdf2_sha256
 
 from database import db, create_document, get_documents, update_document, delete_document
 
@@ -150,7 +150,8 @@ def signup(user: SignupIn):
     existing = get_documents("user", {"email": user.email}, limit=1)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    hashed = bcrypt.hash(user.password)
+    # Use PBKDF2-SHA256 to avoid bcrypt backend/version issues & 72-byte limit
+    hashed = pbkdf2_sha256.hash(user.password)
     doc = {
         "name": user.name,
         "email": user.email,
@@ -168,7 +169,8 @@ def login(payload: LoginIn):
     if not docs:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     user = docs[0]
-    if not bcrypt.verify(payload.password, user.get("password_hash", "")):
+    # Verify using PBKDF2-SHA256
+    if not pbkdf2_sha256.verify(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = uuid.uuid4().hex
     now = datetime.utcnow()
