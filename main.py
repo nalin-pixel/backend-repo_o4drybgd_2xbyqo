@@ -3,12 +3,16 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from passlib.hash import pbkdf2_sha256
 
 from database import db, create_document, get_documents, update_document, delete_document
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploads'))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI()
 
@@ -19,6 +23,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve uploaded media securely via static mount (read-only)
+app.mount("/media", StaticFiles(directory=UPLOAD_DIR), name="media")
 
 @app.get("/")
 def read_root():
@@ -32,6 +39,8 @@ def hello():
 
 @app.on_event("startup")
 def bootstrap_admin():
+    # Ensure upload dir exists
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     try:
         email = os.getenv("ADMIN_EMAIL")
         if not email:
@@ -428,6 +437,66 @@ def delete_testimonial(doc_id: str, _: Dict[str, Any] = Depends(get_current_admi
     if not delete_document("testimonial", doc_id):
         raise HTTPException(status_code=404, detail="Testimonial not found")
     return {"ok": True}
+
+# ---------------- Resume Upload (admin-only) ----------------
+
+MAX_RESUME_SIZE = 8 * 1024 * 1024  # 8 MB
+RESUME_PUBLIC_NAME = "resume.pdf"
+
+@app.post("/api/admin/resume")
+def upload_resume(file: UploadFile = File(...), _: Dict[str, Any] = Depends(get_current_admin)):
+    # Validate content type
+    content_type = (file.content_type or "").lower()
+    if content_type not in ("application/pdf", "application/x-pdf"):
+        # Some browsers set octet-stream; do magic header check below to allow
+        pass
+
+    # Read bytes with size limit
+    data = file.file.read(MAX_RESUME_SIZE + 1)
+    if len(data) > MAX_RESUME_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 8MB)")
+
+    # Magic header check for PDF: startswith %PDF-
+    if not data[:5] == b"%PDF-":
+        raise HTTPException(status_code=400, detail="Invalid PDF file")
+
+    # Write to temp then atomically replace
+    tmp_name = os.path.join(UPLOAD_DIR, f".{uuid.uuid4().hex}.pdf.tmp")
+    final_path = os.path.join(UPLOAD_DIR, RESUME_PUBLIC_NAME)
+    try:
+        with open(tmp_name, "wb") as f:
+            f.write(data)
+        # Atomic replace
+        os.replace(tmp_name, final_path)
+        # Restrictive permissions (rw for owner, r for group)
+        try:
+            os.chmod(final_path, 0o640)
+        except Exception:
+            pass
+    finally:
+        try:
+            if os.path.exists(tmp_name):
+                os.remove(tmp_name)
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "url": f"/media/{RESUME_PUBLIC_NAME}",
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+@app.get("/api/admin/resume")
+def get_resume(_: Dict[str, Any] = Depends(get_current_admin)):
+    final_path = os.path.join(UPLOAD_DIR, RESUME_PUBLIC_NAME)
+    exists = os.path.exists(final_path)
+    updated_at = None
+    if exists:
+        try:
+            updated_at = datetime.utcfromtimestamp(os.path.getmtime(final_path)).isoformat() + "Z"
+        except Exception:
+            updated_at = None
+    return {"exists": exists, "url": (f"/media/{RESUME_PUBLIC_NAME}" if exists else None), "updated_at": updated_at}
 
 # ---------------- Diagnostics ----------------
 
