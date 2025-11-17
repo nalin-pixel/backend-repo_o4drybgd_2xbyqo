@@ -36,15 +36,10 @@ def bootstrap_admin():
         email = os.getenv("ADMIN_EMAIL")
         if not email:
             return
-        # If a specific bootstrap token is set, only run when token present (optional for future use)
-        # token = os.getenv("ADMIN_BOOTSTRAP_TOKEN")
-        # if not token:
-        #     return
         docs = get_documents("user", {"email": email}, limit=1)
         if not docs:
             return
         user_id = docs[0]["_id"]
-        # Promote to admin + verified
         update_document("user", user_id, {"is_admin": True, "is_verified": True})
     except Exception:
         # Silently continue to avoid blocking server start
@@ -140,6 +135,14 @@ class TestimonialIn(BaseModel):
     company: Optional[str] = None
     rating: Optional[int] = None
     logo_url: Optional[str] = None
+    status: Optional[str] = None  # admin may set status directly
+
+class PublicTestimonialIn(BaseModel):
+    name: str
+    role: Optional[str] = None
+    company: Optional[str] = None
+    rating: Optional[int] = None
+    quote: str
 
 class SettingIn(BaseModel):
     key: str
@@ -261,11 +264,11 @@ def seed_data(_: Dict[str, Any] = Depends(get_current_admin)):
 
     existing_testimonials = {(t.get("name"), t.get("company")): t for t in get_documents("testimonial")}
     testimonial_items = [
-      {"name": "A. Santoso", "role": "Product Manager", "company": "VoltPay", "rating": 5, "quote": "Raffi quickly translated complex requirements into clean, intuitive flows. The sprint velocity went up 20%."},
-      {"name": "N. Wijaya", "role": "Marketing Lead", "company": "BloomCo", "rating": 5, "quote": "Our campaign hit record CTR thanks to a cohesive visual system and analytics-driven adjustments."},
-      {"name": "J. Park", "role": "Security Lead", "company": "Secura", "rating": 4, "quote": "His blue-team mindset and SIEM knowledge helped us tighten detections without slowing delivery."},
-      {"name": "M. Rivera", "role": "CTO", "company": "Vitality", "rating": 5, "quote": "From idea to production in three weeks. Clear communication and thoughtful trade-offs throughout."},
-      {"name": "K. Nguyen", "role": "Founder", "company": "Northbeam", "rating": 5, "quote": "The design system and motion guidelines elevated our brand and sped up feature delivery for the team."},
+      {"name": "A. Santoso", "role": "Product Manager", "company": "VoltPay", "rating": 5, "quote": "Raffi quickly translated complex requirements into clean, intuitive flows. The sprint velocity went up 20%.", "status": "approved"},
+      {"name": "N. Wijaya", "role": "Marketing Lead", "company": "BloomCo", "rating": 5, "quote": "Our campaign hit record CTR thanks to a cohesive visual system and analytics-driven adjustments.", "status": "approved"},
+      {"name": "J. Park", "role": "Security Lead", "company": "Secura", "rating": 4, "quote": "His blue-team mindset and SIEM knowledge helped us tighten detections without slowing delivery.", "status": "approved"},
+      {"name": "M. Rivera", "role": "CTO", "company": "Vitality", "rating": 5, "quote": "From idea to production in three weeks. Clear communication and thoughtful trade-offs throughout.", "status": "approved"},
+      {"name": "K. Nguyen", "role": "Founder", "company": "Northbeam", "rating": 5, "quote": "The design system and motion guidelines elevated our brand and sped up feature delivery for the team.", "status": "approved"},
     ]
     for t in testimonial_items:
         key = (t["name"], t["company"])  # type: ignore
@@ -278,7 +281,7 @@ def seed_data(_: Dict[str, Any] = Depends(get_current_admin)):
 
     return {"ok": True}
 
-# ---------------- Public Read Endpoints ----------------
+# ---------------- Public Read & Submit Endpoints ----------------
 
 @app.get("/api/categories")
 def list_categories():
@@ -298,12 +301,44 @@ def list_projects(client_name: Optional[str] = None):
     return [serialize(d) for d in docs]
 
 @app.get("/api/testimonials")
-def list_testimonials(client_name: Optional[str] = None):
-    filt: Dict[str, Any] = {}
+def list_testimonials(client_name: Optional[str] = None, include_all: bool = False, request: Request = None):
+    # Public: only show approved by default
+    filt: Dict[str, Any] = {"status": "approved"}
     if client_name:
         filt["company"] = client_name
+
+    # If include_all requested, verify admin
+    if include_all and request is not None:
+        try:
+            user = get_current_admin(request)
+            if user:
+                filt.pop("status", None)
+        except Exception:
+            # ignore, remain filtered
+            pass
+
     docs = get_documents("testimonial", filt)
     return [serialize(d) for d in docs]
+
+@app.post("/api/testimonials/submit")
+def submit_testimonial(payload: PublicTestimonialIn):
+    # Clamp rating 0-5
+    rating = payload.rating if payload.rating is not None else 5
+    try:
+        rating = max(0, min(5, int(rating)))
+    except Exception:
+        rating = 5
+    doc = {
+        "name": payload.name,
+        "role": payload.role,
+        "company": payload.company,
+        "rating": rating,
+        "quote": payload.quote,
+        "status": "pending",
+        "created_at": datetime.utcnow(),
+    }
+    _id = create_document("testimonial", doc)
+    return {"id": _id, "status": "pending"}
 
 @app.get("/api/settings")
 def get_settings(key: str = "ui"):
@@ -329,7 +364,10 @@ def create_project(payload: ProjectIn, _: Dict[str, Any] = Depends(get_current_a
 
 @app.post("/api/testimonials")
 def create_testimonial(payload: TestimonialIn, _: Dict[str, Any] = Depends(get_current_admin)):
-    _id = create_document("testimonial", payload.model_dump())
+    data = payload.model_dump()
+    if not data.get("status"):
+        data["status"] = "approved"  # admin-created are approved by default
+    _id = create_document("testimonial", data)
     return {"id": _id}
 
 @app.post("/api/settings")
