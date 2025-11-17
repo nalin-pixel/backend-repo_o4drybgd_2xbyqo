@@ -1,19 +1,19 @@
 INFO:     Will watch for changes in these directories: ['/home/workspace']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [461] using StatReload
-INFO:     Started server process [463]
+INFO:     Started reloader process [553] using StatReload
+INFO:     Started server process [555]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     172.20.0.1:35404 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     172.20.0.1:35406 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:35410 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:35422 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:35406 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:58004 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:58018 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:58020 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:58004 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:57080 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:57088 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:57100 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:57080 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51584 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51572 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51586 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51590 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51584 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:51572 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:52448 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     172.20.0.1:37142 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:37158 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:37164 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:37170 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:37142 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:37158 - "GET /api/settings HTTP/1.1" 200 OK

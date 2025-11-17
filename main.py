@@ -63,6 +63,13 @@ class TestimonialIn(BaseModel):
     rating: Optional[int] = None
     logo_url: Optional[str] = None
 
+class SettingIn(BaseModel):
+    key: str
+    marquee_a_seconds: Optional[float] = 30.0
+    marquee_b_seconds: Optional[float] = 28.0
+    glow_intensity: Optional[float] = 0.25
+    parallax_intensity: Optional[float] = 8.0
+
 # Create routes
 @app.post("/api/categories")
 def create_category(payload: CategoryIn):
@@ -83,6 +90,59 @@ def create_project(payload: ProjectIn):
 def create_testimonial(payload: TestimonialIn):
     _id = create_document("testimonial", payload.model_dump())
     return {"id": _id}
+
+@app.post("/api/settings")
+def create_setting(payload: SettingIn):
+    _id = create_document("setting", payload.model_dump())
+    return {"id": _id}
+
+# Seed endpoint: preload sample CMS data
+@app.post("/api/seed")
+def seed_data():
+    # simple idempotent-ish seeding using keys/names uniqueness
+    # categories
+    existing_categories = {c.get("key"): c for c in get_documents("category")}
+    cat_items = [
+        {"key": "uiux", "title": "UI/UX", "description": "Interfaces and flows"},
+        {"key": "brand", "title": "Brand", "description": "Identity and guidelines"},
+    ]
+    for c in cat_items:
+        if c["key"] not in existing_categories:
+            create_document("category", c)
+
+    # clients
+    existing_clients = {c.get("name"): c for c in get_documents("client")}
+    client_items = [
+        {"name": "VoltPay", "category_key": "uiux", "description": "Fintech payments", "logo_url": "https://logo.clearbit.com/visa.com"},
+        {"name": "BloomCo", "category_key": "brand", "description": "D2C beauty", "logo_url": "https://logo.clearbit.com/glossier.com"},
+        {"name": "Secura", "category_key": "uiux", "description": "Security SaaS", "logo_url": "https://logo.clearbit.com/okta.com"},
+        {"name": "Vitality", "category_key": "uiux", "description": "HealthTech", "logo_url": "https://logo.clearbit.com/fitbit.com"},
+        {"name": "Northbeam", "category_key": "brand", "description": "SaaS analytics", "logo_url": "https://logo.clearbit.com/datadog.com"},
+    ]
+    for cl in client_items:
+        if cl["name"] not in existing_clients:
+            create_document("client", cl)
+
+    # testimonials
+    existing_testimonials = {(t.get("name"), t.get("company")): t for t in get_documents("testimonial")}
+    testimonial_items = [
+        {"name": "A. Santoso", "role": "Product Manager", "company": "VoltPay", "rating": 5, "quote": "Raffi quickly translated complex requirements into clean, intuitive flows. The sprint velocity went up 20%."},
+        {"name": "N. Wijaya", "role": "Marketing Lead", "company": "BloomCo", "rating": 5, "quote": "Our campaign hit record CTR thanks to a cohesive visual system and analytics-driven adjustments."},
+        {"name": "J. Park", "role": "Security Lead", "company": "Secura", "rating": 4, "quote": "His blue-team mindset and SIEM knowledge helped us tighten detections without slowing delivery."},
+        {"name": "M. Rivera", "role": "CTO", "company": "Vitality", "rating": 5, "quote": "From idea to production in three weeks. Clear communication and thoughtful trade-offs throughout."},
+        {"name": "K. Nguyen", "role": "Founder", "company": "Northbeam", "rating": 5, "quote": "The design system and motion guidelines elevated our brand and sped up feature delivery for the team."},
+    ]
+    for t in testimonial_items:
+        key = (t["name"], t["company"])  # type: ignore
+        if key not in existing_testimonials:
+            create_document("testimonial", t)
+
+    # settings (singleton by key)
+    existing_settings = {s.get("key"): s for s in get_documents("setting")}
+    if "ui" not in existing_settings:
+        create_document("setting", {"key": "ui", "marquee_a_seconds": 30.0, "marquee_b_seconds": 28.0, "glow_intensity": 0.25, "parallax_intensity": 8.0})
+
+    return {"ok": True}
 
 # Read routes
 @app.get("/api/categories")
@@ -110,6 +170,11 @@ def list_testimonials(client_name: Optional[str] = None):
     docs = get_documents("testimonial", filt)
     return [serialize(d) for d in docs]
 
+@app.get("/api/settings")
+def get_settings(key: str = "ui"):
+    docs = get_documents("setting", {"key": key}, limit=1)
+    return serialize(docs[0]) if docs else {"key": key}
+
 # Update routes
 @app.patch("/api/categories/{doc_id}")
 def update_category(doc_id: str, payload: Dict[str, Any]):
@@ -133,6 +198,12 @@ def update_project(doc_id: str, payload: Dict[str, Any]):
 def update_testimonial(doc_id: str, payload: Dict[str, Any]):
     if not update_document("testimonial", doc_id, payload):
         raise HTTPException(status_code=404, detail="Testimonial not found or not modified")
+    return {"ok": True}
+
+@app.patch("/api/settings/{doc_id}")
+def update_setting(doc_id: str, payload: Dict[str, Any]):
+    if not update_document("setting", doc_id, payload):
+        raise HTTPException(status_code=404, detail="Setting not found or not modified")
     return {"ok": True}
 
 # Delete routes

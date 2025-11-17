@@ -58,6 +58,17 @@ class Testimonial(BaseModel):
     rating: Optional[int] = Field(default=None, ge=1, le=5, description="Star rating 1-5")
     logo_url: Optional[str] = Field(default=None, description="Optional explicit logo URL")
 
+class Setting(BaseModel):
+    """
+    UI/animation settings (singleton document)
+    Collection name: "setting"
+    """
+    key: str = Field(..., description="settings key, e.g. 'ui'")
+    marquee_a_seconds: Optional[float] = Field(30.0, ge=5, le=120)
+    marquee_b_seconds: Optional[float] = Field(28.0, ge=5, le=120)
+    glow_intensity: Optional[float] = Field(0.25, ge=0.0, le=1.0)
+    parallax_intensity: Optional[float] = Field(8.0, ge=0.0, le=40.0, description="Max px drift per card")
+
 # ---------------------- Examples (kept for reference) ----------------------
 
 class User(BaseModel):
