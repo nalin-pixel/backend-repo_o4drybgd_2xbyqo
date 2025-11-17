@@ -1,8 +1,10 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
+from datetime import datetime
+from passlib.hash import bcrypt
 
 from database import db, create_document, get_documents, update_document, delete_document
 
@@ -70,6 +72,20 @@ class SettingIn(BaseModel):
     glow_intensity: Optional[float] = 0.25
     parallax_intensity: Optional[float] = 8.0
 
+# User models
+class SignupIn(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+class UserOut(BaseModel):
+    id: str
+    name: str
+    email: EmailStr
+    is_admin: bool
+    is_verified: bool
+    created_at: datetime
+
 # Create routes
 @app.post("/api/categories")
 def create_category(payload: CategoryIn):
@@ -95,6 +111,48 @@ def create_testimonial(payload: TestimonialIn):
 def create_setting(payload: SettingIn):
     _id = create_document("setting", payload.model_dump())
     return {"id": _id}
+
+# ---------------- Auth & Users ----------------
+
+@app.post("/api/auth/signup", response_model=UserOut)
+def signup(user: SignupIn):
+    # Ensure unique email
+    existing = get_documents("user", {"email": user.email}, limit=1)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    hashed = bcrypt.hash(user.password)
+    doc = {
+        "name": user.name,
+        "email": user.email,
+        "password_hash": hashed,
+        "is_admin": False,
+        "is_verified": False,
+        "created_at": datetime.utcnow(),
+    }
+    _id = create_document("user", doc)
+    return UserOut(id=_id, name=doc["name"], email=doc["email"], is_admin=False, is_verified=False, created_at=doc["created_at"])  # type: ignore
+
+@app.get("/api/users")
+def list_users():
+    docs = [serialize(d) for d in get_documents("user")]
+    for d in docs:
+        d.pop("password_hash", None)
+    return docs
+
+@app.patch("/api/users/{doc_id}/verify-admin")
+def set_admin(doc_id: str, payload: Dict[str, Any]):
+    # payload: {"is_admin": true/false, "is_verified": true/false}
+    allowed = {}
+    if "is_admin" in payload:
+        allowed["is_admin"] = bool(payload["is_admin"])
+    if "is_verified" in payload:
+        allowed["is_verified"] = bool(payload["is_verified"])
+    if not allowed:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    ok = update_document("user", doc_id, allowed)
+    if not ok:
+        raise HTTPException(status_code=404, detail="User not found or not modified")
+    return {"ok": True}
 
 # Seed endpoint: preload sample CMS data
 @app.post("/api/seed")
