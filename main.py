@@ -1,9 +1,11 @@
 import os
-from fastapi import FastAPI, HTTPException
+import uuid
+from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Any
+
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional, Dict, Any
-from datetime import datetime
 from passlib.hash import bcrypt
 
 from database import db, create_document, get_documents, update_document, delete_document
@@ -26,9 +28,7 @@ def read_root():
 def hello():
     return {"message": "Hello from the backend API!"}
 
-# ---------------- Portfolio CMS Endpoints ----------------
-
-# Helper to coerce _id
+# ---------------- Helpers ----------------
 
 def serialize(doc):
     if not doc:
@@ -37,6 +37,60 @@ def serialize(doc):
     if "_id" in d:
         d["id"] = str(d.pop("_id"))
     return d
+
+# Simple session-based auth using DB-backed tokens
+class AuthSession(BaseModel):
+    token: str
+    user_id: str
+    is_admin: bool
+    is_verified: bool
+    created_at: datetime
+    expires_at: datetime
+
+
+def _get_token_from_request(request: Request) -> Optional[str]:
+    auth = request.headers.get("Authorization")
+    if not auth:
+        return None
+    parts = auth.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+
+def get_current_user(request: Request):
+    token = _get_token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    sess_docs = get_documents("session", {"token": token}, limit=1)
+    if not sess_docs:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    sess = serialize(sess_docs[0])
+    # Check expiry
+    try:
+        if sess.get("expires_at") and datetime.fromisoformat(str(sess["expires_at"])) < datetime.utcnow():
+            raise HTTPException(status_code=401, detail="Session expired")
+    except Exception:
+        pass
+    # Load user
+    user_docs = get_documents("user", {"_id": sess_docs[0]["user_id"]}, limit=1) if "user_id" in sess_docs[0] else []
+    # Fallback by id string
+    if not user_docs:
+        user_docs = get_documents("user", {"_id": sess.get("user_id")}, limit=1)
+    if not user_docs:
+        raise HTTPException(status_code=401, detail="User not found")
+    user = serialize(user_docs[0])
+    user.pop("password_hash", None)
+    return user
+
+
+def get_current_admin(request: Request):
+    user = get_current_user(request)
+    if not (user.get("is_admin") and user.get("is_verified")):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+# ---------------- Portfolio CMS Models ----------------
 
 class CategoryIn(BaseModel):
     key: str
@@ -72,9 +126,14 @@ class SettingIn(BaseModel):
     glow_intensity: Optional[float] = 0.25
     parallax_intensity: Optional[float] = 8.0
 
-# User models
+# ---------------- Auth & Users ----------------
+
 class SignupIn(BaseModel):
     name: str
+    email: EmailStr
+    password: str
+
+class LoginIn(BaseModel):
     email: EmailStr
     password: str
 
@@ -86,37 +145,8 @@ class UserOut(BaseModel):
     is_verified: bool
     created_at: datetime
 
-# Create routes
-@app.post("/api/categories")
-def create_category(payload: CategoryIn):
-    _id = create_document("category", payload.model_dump())
-    return {"id": _id}
-
-@app.post("/api/clients")
-def create_client(payload: ClientIn):
-    _id = create_document("client", payload.model_dump())
-    return {"id": _id}
-
-@app.post("/api/projects")
-def create_project(payload: ProjectIn):
-    _id = create_document("project", payload.model_dump())
-    return {"id": _id}
-
-@app.post("/api/testimonials")
-def create_testimonial(payload: TestimonialIn):
-    _id = create_document("testimonial", payload.model_dump())
-    return {"id": _id}
-
-@app.post("/api/settings")
-def create_setting(payload: SettingIn):
-    _id = create_document("setting", payload.model_dump())
-    return {"id": _id}
-
-# ---------------- Auth & Users ----------------
-
 @app.post("/api/auth/signup", response_model=UserOut)
 def signup(user: SignupIn):
-    # Ensure unique email
     existing = get_documents("user", {"email": user.email}, limit=1)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -132,17 +162,43 @@ def signup(user: SignupIn):
     _id = create_document("user", doc)
     return UserOut(id=_id, name=doc["name"], email=doc["email"], is_admin=False, is_verified=False, created_at=doc["created_at"])  # type: ignore
 
+@app.post("/api/auth/login")
+def login(payload: LoginIn):
+    docs = get_documents("user", {"email": payload.email}, limit=1)
+    if not docs:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user = docs[0]
+    if not bcrypt.verify(payload.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = uuid.uuid4().hex
+    now = datetime.utcnow()
+    session_doc = {
+        "token": token,
+        "user_id": user["_id"],
+        "is_admin": bool(user.get("is_admin")),
+        "is_verified": bool(user.get("is_verified")),
+        "created_at": now,
+        "expires_at": now + timedelta(days=7),
+    }
+    create_document("session", session_doc)
+    safe_user = serialize(user)
+    safe_user.pop("password_hash", None)
+    return {"token": token, "user": safe_user}
+
+@app.get("/api/auth/me")
+def me(user: Dict[str, Any] = Depends(get_current_user)):
+    return user
+
 @app.get("/api/users")
-def list_users():
+def list_users(_: Dict[str, Any] = Depends(get_current_admin)):
     docs = [serialize(d) for d in get_documents("user")]
     for d in docs:
         d.pop("password_hash", None)
     return docs
 
 @app.patch("/api/users/{doc_id}/verify-admin")
-def set_admin(doc_id: str, payload: Dict[str, Any]):
-    # payload: {"is_admin": true/false, "is_verified": true/false}
-    allowed = {}
+def set_admin(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
+    allowed: Dict[str, Any] = {}
     if "is_admin" in payload:
         allowed["is_admin"] = bool(payload["is_admin"])
     if "is_verified" in payload:
@@ -154,55 +210,52 @@ def set_admin(doc_id: str, payload: Dict[str, Any]):
         raise HTTPException(status_code=404, detail="User not found or not modified")
     return {"ok": True}
 
-# Seed endpoint: preload sample CMS data
+# ---------------- Seed (admin-only) ----------------
+
 @app.post("/api/seed")
-def seed_data():
-    # simple idempotent-ish seeding using keys/names uniqueness
-    # categories
+def seed_data(_: Dict[str, Any] = Depends(get_current_admin)):
     existing_categories = {c.get("key"): c for c in get_documents("category")}
     cat_items = [
-        {"key": "uiux", "title": "UI/UX", "description": "Interfaces and flows"},
-        {"key": "brand", "title": "Brand", "description": "Identity and guidelines"},
+      {"key": "uiux", "title": "UI/UX", "description": "Interfaces and flows"},
+      {"key": "brand", "title": "Brand", "description": "Identity and guidelines"},
     ]
     for c in cat_items:
         if c["key"] not in existing_categories:
             create_document("category", c)
 
-    # clients
     existing_clients = {c.get("name"): c for c in get_documents("client")}
     client_items = [
-        {"name": "VoltPay", "category_key": "uiux", "description": "Fintech payments", "logo_url": "https://logo.clearbit.com/visa.com"},
-        {"name": "BloomCo", "category_key": "brand", "description": "D2C beauty", "logo_url": "https://logo.clearbit.com/glossier.com"},
-        {"name": "Secura", "category_key": "uiux", "description": "Security SaaS", "logo_url": "https://logo.clearbit.com/okta.com"},
-        {"name": "Vitality", "category_key": "uiux", "description": "HealthTech", "logo_url": "https://logo.clearbit.com/fitbit.com"},
-        {"name": "Northbeam", "category_key": "brand", "description": "SaaS analytics", "logo_url": "https://logo.clearbit.com/datadog.com"},
+      {"name": "VoltPay", "category_key": "uiux", "description": "Fintech payments", "logo_url": "https://logo.clearbit.com/visa.com"},
+      {"name": "BloomCo", "category_key": "brand", "description": "D2C beauty", "logo_url": "https://logo.clearbit.com/glossier.com"},
+      {"name": "Secura", "category_key": "uiux", "description": "Security SaaS", "logo_url": "https://logo.clearbit.com/okta.com"},
+      {"name": "Vitality", "category_key": "uiux", "description": "HealthTech", "logo_url": "https://logo.clearbit.com/fitbit.com"},
+      {"name": "Northbeam", "category_key": "brand", "description": "SaaS analytics", "logo_url": "https://logo.clearbit.com/datadog.com"},
     ]
     for cl in client_items:
         if cl["name"] not in existing_clients:
             create_document("client", cl)
 
-    # testimonials
     existing_testimonials = {(t.get("name"), t.get("company")): t for t in get_documents("testimonial")}
     testimonial_items = [
-        {"name": "A. Santoso", "role": "Product Manager", "company": "VoltPay", "rating": 5, "quote": "Raffi quickly translated complex requirements into clean, intuitive flows. The sprint velocity went up 20%."},
-        {"name": "N. Wijaya", "role": "Marketing Lead", "company": "BloomCo", "rating": 5, "quote": "Our campaign hit record CTR thanks to a cohesive visual system and analytics-driven adjustments."},
-        {"name": "J. Park", "role": "Security Lead", "company": "Secura", "rating": 4, "quote": "His blue-team mindset and SIEM knowledge helped us tighten detections without slowing delivery."},
-        {"name": "M. Rivera", "role": "CTO", "company": "Vitality", "rating": 5, "quote": "From idea to production in three weeks. Clear communication and thoughtful trade-offs throughout."},
-        {"name": "K. Nguyen", "role": "Founder", "company": "Northbeam", "rating": 5, "quote": "The design system and motion guidelines elevated our brand and sped up feature delivery for the team."},
+      {"name": "A. Santoso", "role": "Product Manager", "company": "VoltPay", "rating": 5, "quote": "Raffi quickly translated complex requirements into clean, intuitive flows. The sprint velocity went up 20%."},
+      {"name": "N. Wijaya", "role": "Marketing Lead", "company": "BloomCo", "rating": 5, "quote": "Our campaign hit record CTR thanks to a cohesive visual system and analytics-driven adjustments."},
+      {"name": "J. Park", "role": "Security Lead", "company": "Secura", "rating": 4, "quote": "His blue-team mindset and SIEM knowledge helped us tighten detections without slowing delivery."},
+      {"name": "M. Rivera", "role": "CTO", "company": "Vitality", "rating": 5, "quote": "From idea to production in three weeks. Clear communication and thoughtful trade-offs throughout."},
+      {"name": "K. Nguyen", "role": "Founder", "company": "Northbeam", "rating": 5, "quote": "The design system and motion guidelines elevated our brand and sped up feature delivery for the team."},
     ]
     for t in testimonial_items:
         key = (t["name"], t["company"])  # type: ignore
         if key not in existing_testimonials:
             create_document("testimonial", t)
 
-    # settings (singleton by key)
     existing_settings = {s.get("key"): s for s in get_documents("setting")}
     if "ui" not in existing_settings:
         create_document("setting", {"key": "ui", "marquee_a_seconds": 30.0, "marquee_b_seconds": 28.0, "glow_intensity": 0.25, "parallax_intensity": 8.0})
 
     return {"ok": True}
 
-# Read routes
+# ---------------- Public Read Endpoints ----------------
+
 @app.get("/api/categories")
 def list_categories():
     docs = get_documents("category")
@@ -233,63 +286,89 @@ def get_settings(key: str = "ui"):
     docs = get_documents("setting", {"key": key}, limit=1)
     return serialize(docs[0]) if docs else {"key": key}
 
-# Update routes
+# ---------------- Admin Mutations (protected) ----------------
+
+@app.post("/api/categories")
+def create_category(payload: CategoryIn, _: Dict[str, Any] = Depends(get_current_admin)):
+    _id = create_document("category", payload.model_dump())
+    return {"id": _id}
+
+@app.post("/api/clients")
+def create_client(payload: ClientIn, _: Dict[str, Any] = Depends(get_current_admin)):
+    _id = create_document("client", payload.model_dump())
+    return {"id": _id}
+
+@app.post("/api/projects")
+def create_project(payload: ProjectIn, _: Dict[str, Any] = Depends(get_current_admin)):
+    _id = create_document("project", payload.model_dump())
+    return {"id": _id}
+
+@app.post("/api/testimonials")
+def create_testimonial(payload: TestimonialIn, _: Dict[str, Any] = Depends(get_current_admin)):
+    _id = create_document("testimonial", payload.model_dump())
+    return {"id": _id}
+
+@app.post("/api/settings")
+def create_setting(payload: SettingIn, _: Dict[str, Any] = Depends(get_current_admin)):
+    _id = create_document("setting", payload.model_dump())
+    return {"id": _id}
+
 @app.patch("/api/categories/{doc_id}")
-def update_category(doc_id: str, payload: Dict[str, Any]):
+def update_category(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
     if not update_document("category", doc_id, payload):
         raise HTTPException(status_code=404, detail="Category not found or not modified")
     return {"ok": True}
 
 @app.patch("/api/clients/{doc_id}")
-def update_client(doc_id: str, payload: Dict[str, Any]):
+def update_client(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
     if not update_document("client", doc_id, payload):
         raise HTTPException(status_code=404, detail="Client not found or not modified")
     return {"ok": True}
 
 @app.patch("/api/projects/{doc_id}")
-def update_project(doc_id: str, payload: Dict[str, Any]):
+def update_project(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
     if not update_document("project", doc_id, payload):
         raise HTTPException(status_code=404, detail="Project not found or not modified")
     return {"ok": True}
 
 @app.patch("/api/testimonials/{doc_id}")
-def update_testimonial(doc_id: str, payload: Dict[str, Any]):
+def update_testimonial(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
     if not update_document("testimonial", doc_id, payload):
         raise HTTPException(status_code=404, detail="Testimonial not found or not modified")
     return {"ok": True}
 
 @app.patch("/api/settings/{doc_id}")
-def update_setting(doc_id: str, payload: Dict[str, Any]):
+def update_setting(doc_id: str, payload: Dict[str, Any], _: Dict[str, Any] = Depends(get_current_admin)):
     if not update_document("setting", doc_id, payload):
         raise HTTPException(status_code=404, detail="Setting not found or not modified")
     return {"ok": True}
 
-# Delete routes
 @app.delete("/api/categories/{doc_id}")
-def delete_category(doc_id: str):
+def delete_category(doc_id: str, _: Dict[str, Any] = Depends(get_current_admin)):
     if not delete_document("category", doc_id):
         raise HTTPException(status_code=404, detail="Category not found")
     return {"ok": True}
 
 @app.delete("/api/clients/{doc_id}")
-def delete_client(doc_id: str):
+def delete_client(doc_id: str, _: Dict[str, Any] = Depends(get_current_admin)):
     if not delete_document("client", doc_id):
         raise HTTPException(status_code=404, detail="Client not found")
     return {"ok": True}
 
 @app.delete("/api/projects/{doc_id}")
-def delete_project(doc_id: str):
+def delete_project(doc_id: str, _: Dict[str, Any] = Depends(get_current_admin)):
     if not delete_document("project", doc_id):
         raise HTTPException(status_code=404, detail="Project not found")
     return {"ok": True}
 
 @app.delete("/api/testimonials/{doc_id}")
-def delete_testimonial(doc_id: str):
+def delete_testimonial(doc_id: str, _: Dict[str, Any] = Depends(get_current_admin)):
     if not delete_document("testimonial", doc_id):
         raise HTTPException(status_code=404, detail="Testimonial not found")
     return {"ok": True}
 
-# Test DB connectivity
+# ---------------- Diagnostics ----------------
+
 @app.get("/test")
 def test_database():
     response = {
