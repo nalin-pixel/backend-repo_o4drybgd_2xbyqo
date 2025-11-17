@@ -1,25 +1,33 @@
 INFO:     Will watch for changes in these directories: ['/home/workspace']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [1160] using StatReload
-INFO:     Started server process [1162]
+INFO:     Started reloader process [1210] using StatReload
+INFO:     Started server process [1212]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     172.20.0.1:41016 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     172.20.0.1:41030 - "GET /api/settings HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41042 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41044 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41058 - "GET /api/settings HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41030 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41042 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41068 - "GET /api/settings HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41074 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41084 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41098 - "GET /api/settings HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41068 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:41074 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59318 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59320 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59326 - "GET /api/settings HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59336 - "GET /api/testimonials HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59318 - "GET /api/clients HTTP/1.1" 200 OK
-INFO:     172.20.0.1:59320 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45858 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     172.20.0.1:45864 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45866 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45880 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45884 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45864 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45866 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45914 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45932 - "GET /api/categories HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45942 - "GET /api/projects HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45938 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45916 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45926 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45932 - "GET /api/categories HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45914 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45942 - "GET /api/projects HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45938 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45916 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45926 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45932 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45942 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45916 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45926 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45932 - "GET /api/testimonials HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45942 - "GET /api/clients HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45916 - "GET /api/users HTTP/1.1" 200 OK
+INFO:     172.20.0.1:45942 - "GET /api/users HTTP/1.1" 200 OK
