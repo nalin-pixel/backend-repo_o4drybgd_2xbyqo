@@ -11,6 +11,11 @@ from passlib.hash import pbkdf2_sha256
 
 from database import db, create_document, get_documents, update_document, delete_document
 
+# Email deps (stdlib)
+import smtplib
+import ssl
+from email.message import EmailMessage
+
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploads'))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -159,6 +164,14 @@ class SettingIn(BaseModel):
     marquee_b_seconds: Optional[float] = 28.0
     glow_intensity: Optional[float] = 0.25
     parallax_intensity: Optional[float] = 8.0
+
+# ---------------- Contact Model ----------------
+
+class ContactIn(BaseModel):
+    name: str
+    email: EmailStr
+    category: str
+    message: str
 
 # ---------------- Auth & Users ----------------
 
@@ -353,6 +366,72 @@ def submit_testimonial(payload: PublicTestimonialIn):
 def get_settings(key: str = "ui"):
     docs = get_documents("setting", {"key": key}, limit=1)
     return serialize(docs[0]) if docs else {"key": key}
+
+# ---------------- Contact Submission ----------------
+
+PHOTOGRAPHY_EMAIL = os.getenv("PHOTOGRAPHY_EMAIL", "echoesofraf@gmail.com")
+DEFAULT_CONTACT_EMAIL = os.getenv("DEFAULT_CONTACT_EMAIL", "raffialvri23@gmail.com")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+SMTP_FROM = os.getenv("SMTP_FROM") or (SMTP_USER or "no-reply@example.com")
+
+
+def _send_email(subject: str, body: str, to_email: str) -> bool:
+    if not SMTP_HOST or not SMTP_FROM:
+        # Email not configured in this environment
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM
+    msg["To"] = to_email
+    msg.set_content(body)
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.starttls(context=context)
+            if SMTP_USER and SMTP_PASS:
+                server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
+@app.post("/api/contact")
+def submit_contact(payload: ContactIn):
+    cat = (payload.category or '').strip().lower()
+    to_email = PHOTOGRAPHY_EMAIL if cat == 'photography' else DEFAULT_CONTACT_EMAIL
+
+    # Store in database for persistence/audit
+    doc = {
+        "name": payload.name,
+        "email": payload.email,
+        "category": cat,
+        "message": payload.message,
+        "to_email": to_email,
+        "created_at": datetime.utcnow(),
+        "emailed": False,
+    }
+    _id = create_document("contact", doc)
+
+    # Attempt email
+    subject = f"New contact via portfolio • {payload.category.title()}"
+    body = (
+        f"You received a new contact submission.\n\n"
+        f"Name: {payload.name}\n"
+        f"Email: {payload.email}\n"
+        f"Category: {payload.category}\n\n"
+        f"Message:\n{payload.message}\n"
+        f"\nID: {_id}\nTime: {datetime.utcnow().isoformat()}Z\n"
+    )
+    emailed = _send_email(subject, body, to_email)
+    if emailed:
+        update_document("contact", _id, {"emailed": True, "emailed_at": datetime.utcnow()})
+
+    return {"ok": True, "id": _id, "emailed": emailed}
 
 # ---------------- Admin Mutations (protected) ----------------
 
