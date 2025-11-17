@@ -59,6 +59,9 @@ class TestimonialIn(BaseModel):
     name: str
     role: Optional[str] = None
     quote: str
+    company: Optional[str] = None
+    rating: Optional[int] = None
+    logo_url: Optional[str] = None
 
 # Create routes
 @app.post("/api/categories")
@@ -100,8 +103,11 @@ def list_projects(client_name: Optional[str] = None):
     return [serialize(d) for d in docs]
 
 @app.get("/api/testimonials")
-def list_testimonials():
-    docs = get_documents("testimonial")
+def list_testimonials(client_name: Optional[str] = None):
+    filt: Dict[str, Any] = {}
+    if client_name:
+        filt["company"] = client_name
+    docs = get_documents("testimonial", filt)
     return [serialize(d) for d in docs]
 
 # Update routes

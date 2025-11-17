@@ -54,6 +54,9 @@ class Testimonial(BaseModel):
     name: str
     role: Optional[str] = None
     quote: str
+    company: Optional[str] = Field(default=None, description="Company or client name")
+    rating: Optional[int] = Field(default=None, ge=1, le=5, description="Star rating 1-5")
+    logo_url: Optional[str] = Field(default=None, description="Optional explicit logo URL")
 
 # ---------------------- Examples (kept for reference) ----------------------
 
