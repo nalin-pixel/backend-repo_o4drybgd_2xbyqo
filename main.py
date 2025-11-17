@@ -28,6 +28,28 @@ def read_root():
 def hello():
     return {"message": "Hello from the backend API!"}
 
+# ---------------- Startup Bootstrap ----------------
+
+@app.on_event("startup")
+def bootstrap_admin():
+    try:
+        email = os.getenv("ADMIN_EMAIL")
+        if not email:
+            return
+        # If a specific bootstrap token is set, only run when token present (optional for future use)
+        # token = os.getenv("ADMIN_BOOTSTRAP_TOKEN")
+        # if not token:
+        #     return
+        docs = get_documents("user", {"email": email}, limit=1)
+        if not docs:
+            return
+        user_id = docs[0]["_id"]
+        # Promote to admin + verified
+        update_document("user", user_id, {"is_admin": True, "is_verified": True})
+    except Exception:
+        # Silently continue to avoid blocking server start
+        pass
+
 # ---------------- Helpers ----------------
 
 def serialize(doc):
