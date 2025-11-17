@@ -2,47 +2,73 @@
 Database Schemas
 
 Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
-
 Each Pydantic model represents a collection in your database.
+
 Model name is converted to lowercase for the collection name:
 - User -> "user" collection
 - Product -> "product" collection
-- BlogPost -> "blogs" collection
+- BlogPost -> "blogpost" collection
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 
-# Example schemas (replace with your own):
+# ---------------------- Core Portfolio CMS Schemas ----------------------
+
+class Category(BaseModel):
+    """
+    Portfolio categories like UI/UX, Graphic, Photography, etc.
+    Collection name: "category"
+    """
+    key: str = Field(..., description="Unique key slug, e.g. 'uiux'")
+    title: str = Field(..., description="Display title")
+    description: Optional[str] = Field(None, description="Short summary")
+
+class Client(BaseModel):
+    """
+    Clients associated to a category
+    Collection name: "client"
+    """
+    name: str = Field(..., description="Client name")
+    category_key: str = Field(..., description="Key of related Category")
+    description: Optional[str] = Field(None, description="Client summary")
+    logo_url: Optional[str] = Field(None, description="Logo URL")
+
+class Project(BaseModel):
+    """
+    Projects associated to a client
+    Collection name: "project"
+    """
+    client_name: str = Field(..., description="Client name reference")
+    title: str = Field(..., description="Project title")
+    tag: Optional[str] = Field(None, description="Type tag, e.g. UI/UX, Graphic")
+    description: Optional[str] = Field(None, description="Short description")
+    images: Optional[List[str]] = Field(default=None, description="Image URLs")
+    link: Optional[str] = Field(default=None, description="External link or case study URL")
+
+class Testimonial(BaseModel):
+    """
+    Client testimonials
+    Collection name: "testimonial"
+    """
+    name: str
+    role: Optional[str] = None
+    quote: str
+
+# ---------------------- Examples (kept for reference) ----------------------
 
 class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+    name: str
+    email: str
+    address: str
+    age: Optional[int] = Field(None, ge=0, le=120)
+    is_active: bool = True
 
 class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
+    title: str
+    description: Optional[str] = None
+    price: float = Field(..., ge=0)
+    category: str
+    in_stock: bool = True
 
-# Add your own schemas here:
-# --------------------------------------------------
-
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+# The Flames database viewer will read these via GET /schema

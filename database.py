@@ -9,8 +9,9 @@ from pymongo import MongoClient
 from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
-from typing import Union
+from typing import Union, Optional, Dict, Any
 from pydantic import BaseModel
+from bson import ObjectId
 
 # Load environment variables from .env file
 load_dotenv()
@@ -53,3 +54,27 @@ def get_documents(collection_name: str, filter_dict: dict = None, limit: int = N
         cursor = cursor.limit(limit)
     
     return list(cursor)
+
+def update_document(collection_name: str, doc_id: str, data: Dict[str, Any]):
+    """Update a document by id"""
+    if db is None:
+        raise Exception("Database not available. Check DATABASE_URL and DATABASE_NAME environment variables.")
+    try:
+        oid = ObjectId(doc_id)
+    except Exception:
+        raise ValueError("Invalid document id")
+    data = {k: v for k, v in data.items() if k != "_id" and v is not None}
+    data['updated_at'] = datetime.now(timezone.utc)
+    res = db[collection_name].update_one({"_id": oid}, {"$set": data})
+    return res.modified_count > 0
+
+def delete_document(collection_name: str, doc_id: str):
+    """Delete a document by id"""
+    if db is None:
+        raise Exception("Database not available. Check DATABASE_URL and DATABASE_NAME environment variables.")
+    try:
+        oid = ObjectId(doc_id)
+    except Exception:
+        raise ValueError("Invalid document id")
+    res = db[collection_name].delete_one({"_id": oid})
+    return res.deleted_count > 0
